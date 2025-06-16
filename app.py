@@ -43,12 +43,16 @@ def process_single_sheet(input_df, ami_df):
         serial_to_model[serial] = model
         serial_to_type[serial] = equip_type
 
-    model_to_type = {}
-    for serial, model in serial_to_model.items():
-        if model not in model_to_type:
-            model_to_type[model] = serial_to_type.get(serial, "TYPE MISSING")
+    # Group parts by equipment type only
+    type_spares = defaultdict(lambda: defaultdict(lambda: {
+        "Item no.": None,
+        "Total qty": 0,
+        "Spare qty": 0,
+        "Unit Price ($)": None,
+        "Description": "",
+        "Models": set()  # Track which models use this part
+    }))
 
-    model_spares = defaultdict(list)
     last_serial = None
     current_model = None
     current_type = None
@@ -68,44 +72,35 @@ def process_single_sheet(input_df, ami_df):
         spare_qty = pd.to_numeric(row['Spare Qty'], errors='coerce') or 0
 
         if pd.notna(item_no) and str(item_no).strip().upper() != 'TBD' and pd.notna(description):
-            model_spares[(current_type, current_model)].append({
-                'Item no.': item_no,
-                'Description': description,
-                'Unit Price ($)': unit_price,
-                'Total qty': total_qty,
-                'Spare qty': spare_qty
-            })
+            part_data = type_spares[current_type][item_no]
+            part_data["Item no."] = item_no
+            part_data["Description"] = description
+            part_data["Unit Price ($)"] = unit_price
+            part_data["Total qty"] += total_qty
+            part_data["Spare qty"] += spare_qty
+            part_data["Models"].add(current_model)
 
     output_rows = []
-    grouped_models = sorted(model_spares.keys(), key=lambda x: (x[0], x[1]))
-
-    for equip_type, model in grouped_models:
-        output_rows.append([equip_type, model, '', '', '', '', ''])
-        parts = model_spares[(equip_type, model)]
-        grouped_parts = defaultdict(lambda: {
-            "Item no.": None,
-            "Total qty": 0,
-            "Spare qty": 0,
-            "Unit Price ($)": None,
-            "Description": ""
-        })
-
-        for part in parts:
-            item_no = part['Item no.']
-            grouped_parts[item_no]["Description"] = part['Description']
-            grouped_parts[item_no]["Unit Price ($)"] = part['Unit Price ($)']
-            grouped_parts[item_no]["Total qty"] += part['Total qty']
-            grouped_parts[item_no]["Spare qty"] += part['Spare qty']
-
-        for item_no in sorted(grouped_parts.keys(), key=lambda x: grouped_parts[x]["Description"]):
-            data = grouped_parts[item_no]
+    # Sort equipment types
+    for equip_type in sorted(type_spares.keys()):
+        output_rows.append([equip_type, '', '', '', '', '', ''])
+        # Get parts for this equipment type and sort by description
+        parts = type_spares[equip_type]
+        sorted_parts = sorted(parts.items(), key=lambda x: x[1]["Description"])
+        
+        for item_no, data in sorted_parts:
             output_rows.append([
-                '', '', data['Total qty'], data['Spare qty'],
-                item_no, data['Description'], data['Unit Price ($)']
+                '',  # Empty equipment type for sub-rows
+                data['Total qty'],
+                data['Spare qty'],
+                item_no,
+                data['Description'],
+                data['Unit Price ($)'],
+                ', '.join(sorted(data['Models']))  # Join models with commas
             ])
 
     return pd.DataFrame(output_rows, columns=[
-        'Equipment Type', 'Model', 'Total qty', 'Spare qty', 'Item no.', 'Description', 'Unit Price ($)'
+        'Equipment Type', 'Total qty', 'Spare qty', 'Item no.', 'Description', 'Unit Price ($)', 'Models'
     ])
 
 def process_excel(uploaded_file):
