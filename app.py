@@ -51,17 +51,22 @@ def process_single_sheet(input_df, ami_df):
         "Unit Price ($)": None,
         "Description": "",
         "Models": set(),  # Track which models use this part
-        "Machine Count": 0  # Track number of machines using this part
+        "Machine Count": 0,  # Track number of machines using this part
+        "Max Spare Per Machine": 0  # Track highest spare quantity per machine
     }))
 
-    last_serial = None
+    # First pass: collect data and find max spare per machine
+    current_serial = None
     current_model = None
     current_type = None
+    machine_spares = defaultdict(int)  # Track spare quantities per machine for current part
 
     for _, row in input_df.iterrows():
         serial = row['Serial']
-        if serial != last_serial:
-            last_serial = serial
+        if serial != current_serial:
+            # Reset machine_spares when moving to a new machine
+            machine_spares.clear()
+            current_serial = serial
             current_model = serial_to_model.get(serial, "MODEL MISSING")
             current_type = serial_to_type.get(serial, "TYPE MISSING")
             continue
@@ -78,9 +83,13 @@ def process_single_sheet(input_df, ami_df):
             part_data["Description"] = description
             part_data["Unit Price ($)"] = unit_price
             part_data["Total qty"] += total_qty
-            part_data["Spare qty"] += spare_qty
             part_data["Models"].add(current_model)
             part_data["Machine Count"] += 1
+            
+            # Track spare quantity for current machine
+            machine_spares[item_no] += spare_qty
+            # Update max spare per machine if current machine has more
+            part_data["Max Spare Per Machine"] = max(part_data["Max Spare Per Machine"], machine_spares[item_no])
 
     output_rows = []
     # Sort equipment types
@@ -106,13 +115,13 @@ def process_single_sheet(input_df, ami_df):
             else:
                 scale_factor = 2.0  # Default to 2.0 for 25 or more machines
 
-            # Calculate scaled spare quantity
-            scaled_spare_qty = data['Spare qty'] * scale_factor
+            # Calculate final spare quantity based on max spare per machine
+            final_spare_qty = data["Max Spare Per Machine"] * scale_factor
 
             output_rows.append([
                 '',  # Empty equipment type for sub-rows
                 data['Total qty'],
-                scaled_spare_qty,
+                final_spare_qty,
                 item_no,
                 data['Description'],
                 data['Unit Price ($)'],
