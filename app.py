@@ -50,7 +50,8 @@ def process_single_sheet(input_df, ami_df):
         "Spare qty": 0,
         "Unit Price ($)": None,
         "Description": "",
-        "Models": set()  # Track which models use this part
+        "Models": set(),  # Track which models use this part
+        "Machine Count": 0  # Track number of machines using this part
     }))
 
     last_serial = None
@@ -79,6 +80,7 @@ def process_single_sheet(input_df, ami_df):
             part_data["Total qty"] += total_qty
             part_data["Spare qty"] += spare_qty
             part_data["Models"].add(current_model)
+            part_data["Machine Count"] += 1
 
     output_rows = []
     # Sort equipment types
@@ -89,10 +91,28 @@ def process_single_sheet(input_df, ami_df):
         sorted_parts = sorted(parts.items(), key=lambda x: x[1]["Description"])
         
         for item_no, data in sorted_parts:
+            # Calculate scaling factor based on number of machines
+            machine_count = data["Machine Count"]
+            if machine_count < 5:
+                scale_factor = 1.0
+            elif machine_count < 10:
+                scale_factor = 1.25
+            elif machine_count < 15:
+                scale_factor = 1.5
+            elif machine_count < 20:
+                scale_factor = 1.75
+            elif machine_count < 25:
+                scale_factor = 2.0
+            else:
+                scale_factor = 2.0  # Default to 2.0 for 25 or more machines
+
+            # Calculate scaled spare quantity
+            scaled_spare_qty = data['Spare qty'] * scale_factor
+
             output_rows.append([
                 '',  # Empty equipment type for sub-rows
                 data['Total qty'],
-                data['Spare qty'],
+                scaled_spare_qty,
                 item_no,
                 data['Description'],
                 data['Unit Price ($)'],
