@@ -61,8 +61,20 @@ def process_single_sheet(input_df, ami_df):
     # Track per-machine spare qty for each part
     per_machine_spares = defaultdict(lambda: defaultdict(float))  # [equip_type][(item_no, serial)] = spare_qty
 
+    last_serial = None
+    first_row_for_serial = True
     for _, row in input_df.iterrows():
         serial = row['Serial']
+        if serial != last_serial:
+            last_serial = serial
+            first_row_for_serial = True
+        else:
+            first_row_for_serial = False
+
+        # Skip the first row for each new serial (machine header row)
+        if first_row_for_serial:
+            continue
+
         model = serial_to_model.get(serial, "MODEL MISSING")
         equip_type = serial_to_type.get(serial, "TYPE MISSING")
         item_no = row['Item No.']
@@ -71,16 +83,20 @@ def process_single_sheet(input_df, ami_df):
         total_qty = pd.to_numeric(row['Total Qty'], errors='coerce') or 0
         spare_qty = pd.to_numeric(row['Spare Qty'], errors='coerce') or 0
 
-        if pd.notna(item_no) and str(item_no).strip().upper() != 'TBD' and pd.notna(description):
-            part_data = type_spares[equip_type][item_no]
-            part_data["Item no."] = item_no
-            part_data["Description"] = description
-            part_data["Unit Price ($)"] = unit_price
-            part_data["Total qty"] += total_qty
-            part_data["Models"].add(model)
-            part_data["Serials"].add(serial)
-            # Track max spare qty for this part in this machine
-            per_machine_spares[equip_type][(item_no, serial)] += spare_qty
+        # Skip rows that are just machine serial headers (no part data)
+        if pd.isna(item_no) or pd.isna(description):
+            continue
+        if str(item_no).strip().upper() == 'TBD':
+            continue
+
+        part_data = type_spares[equip_type][item_no]
+        part_data["Item no."] = item_no
+        part_data["Description"] = description
+        part_data["Unit Price ($)"] = unit_price
+        part_data["Total qty"] += total_qty
+        part_data["Models"].add(model)
+        part_data["Serials"].add(serial)
+        per_machine_spares[equip_type][(item_no, serial)] += spare_qty
 
     # After collecting, set max spare per machine for each part
     for equip_type, parts in type_spares.items():
