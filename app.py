@@ -62,17 +62,14 @@ def process_single_sheet(input_df, ami_df):
     per_machine_spares = defaultdict(lambda: defaultdict(float))  # [equip_type][(item_no, serial)] = spare_qty
 
     last_serial = None
-    first_row_for_serial = True
+    skip_next = False
     for _, row in input_df.iterrows():
         serial = row['Serial']
         if serial != last_serial:
             last_serial = serial
-            first_row_for_serial = True
-        else:
-            first_row_for_serial = False
-
-        # Skip the first row for each new serial (machine header row)
-        if first_row_for_serial:
+            skip_next = True
+        if skip_next:
+            skip_next = False
             continue
 
         model = serial_to_model.get(serial, "MODEL MISSING")
