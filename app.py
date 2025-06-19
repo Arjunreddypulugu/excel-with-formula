@@ -4,7 +4,6 @@ from collections import defaultdict
 from io import BytesIO
 import difflib
 import sqlalchemy
-import math
 
 REQUIRED_COLUMNS = [
     'serial', 'total qty', 'spare qty', 'item no.', 'description', 'unit price ($)'
@@ -112,7 +111,7 @@ def process_single_sheet(input_df, ami_df):
                 scale_factor = 2.0
             else:
                 scale_factor = 2.0
-            final_spare_qty = math.ceil(data["Max Spare Per Machine"] * scale_factor)
+            final_spare_qty = data["Max Spare Per Machine"] * scale_factor
             output_rows.append([
                 '',
                 data['Total qty'],
