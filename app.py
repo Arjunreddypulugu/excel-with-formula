@@ -44,23 +44,18 @@ def process_single_sheet(input_df, ami_df):
         serial_to_model[serial] = model
         serial_to_type[serial] = equip_type
 
-    # For each equipment type, part, track:
-    # - set of unique machines (serials)
-    # - max spare qty for that part in any machine
-    # - total qty (sum as before)
-    # - description, unit price, models
-    type_spares = defaultdict(lambda: defaultdict(lambda: {
+    # Aggregate by Item no. only
+    part_spares = defaultdict(lambda: {
         "Item no.": None,
         "Total qty": 0,
         "Unit Price ($)": None,
         "Description": "",
         "Models": set(),
         "Serials": set(),
-        "Max Spare Per Machine": 0
-    }))
-
-    # Track per-machine spare qty for each part
-    per_machine_spares = defaultdict(lambda: defaultdict(float))  # [equip_type][(item_no, serial)] = spare_qty
+        "Max Spare Per Machine": 0,
+        "Equipment Types": set()
+    })
+    per_machine_spares = defaultdict(lambda: defaultdict(float))  # [item_no][serial] = spare_qty
 
     last_serial = None
     skip_next = False
@@ -81,62 +76,54 @@ def process_single_sheet(input_df, ami_df):
         total_qty = pd.to_numeric(row['Total Qty'], errors='coerce') or 0
         spare_qty = pd.to_numeric(row['Spare Qty'], errors='coerce') or 0
 
-        # Skip rows that are just machine serial headers (no part data)
         if pd.isna(item_no) or pd.isna(description):
             continue
         if str(item_no).strip().upper() == 'TBD':
             continue
 
-        part_data = type_spares[equip_type][item_no]
+        part_data = part_spares[item_no]
         part_data["Item no."] = item_no
         part_data["Description"] = description
         part_data["Unit Price ($)"] = unit_price
         part_data["Total qty"] += total_qty
         part_data["Models"].add(model)
         part_data["Serials"].add(serial)
-        per_machine_spares[equip_type][(item_no, serial)] += spare_qty
+        part_data["Equipment Types"].add(equip_type)
+        per_machine_spares[item_no][serial] += spare_qty
 
-    # After collecting, set max spare per machine for each part
-    for equip_type, parts in type_spares.items():
-        for item_no, part_data in parts.items():
-            # Find max spare qty for this part across all machines
-            max_spare = 0
-            for (ino, serial), qty in per_machine_spares[equip_type].items():
-                if ino == item_no:
-                    max_spare = max(max_spare, qty)
-            part_data["Max Spare Per Machine"] = max_spare
+    for item_no, part_data in part_spares.items():
+        max_spare = 0
+        for serial, qty in per_machine_spares[item_no].items():
+            max_spare = max(max_spare, qty)
+        part_data["Max Spare Per Machine"] = max_spare
 
     output_rows = []
-    for equip_type in sorted(type_spares.keys()):
-        output_rows.append([equip_type, '', '', '', '', '', ''])
-        parts = type_spares[equip_type]
-        sorted_parts = sorted(parts.items(), key=lambda x: x[1]["Description"])
-        for item_no, data in sorted_parts:
-            machine_count = len(data["Serials"])
-            if machine_count < 5:
-                scale_factor = 1.0
-            elif machine_count < 10:
-                scale_factor = 1.25
-            elif machine_count < 15:
-                scale_factor = 1.5
-            elif machine_count < 20:
-                scale_factor = 1.75
-            elif machine_count < 25:
-                scale_factor = 2.0
-            else:
-                scale_factor = 2.0
-            final_spare_qty = math.ceil(data["Max Spare Per Machine"] * scale_factor)
-            output_rows.append([
-                '',
-                data['Total qty'],
-                final_spare_qty,
-                item_no,
-                data['Description'],
-                data['Unit Price ($)'],
-                ', '.join(sorted(data['Models']))
-            ])
+    for item_no, data in sorted(part_spares.items(), key=lambda x: x[1]["Description"]):
+        machine_count = len(data["Serials"])
+        if machine_count < 5:
+            scale_factor = 1.0
+        elif machine_count < 10:
+            scale_factor = 1.25
+        elif machine_count < 15:
+            scale_factor = 1.5
+        elif machine_count < 20:
+            scale_factor = 1.75
+        elif machine_count < 25:
+            scale_factor = 2.0
+        else:
+            scale_factor = 2.0
+        final_spare_qty = math.ceil(data["Max Spare Per Machine"] * scale_factor)
+        output_rows.append([
+            data['Total qty'],
+            final_spare_qty,
+            item_no,
+            data['Description'],
+            data['Unit Price ($)'],
+            ', '.join(sorted(data['Models'])),
+            ', '.join(sorted(data['Equipment Types']))
+        ])
     return pd.DataFrame(output_rows, columns=[
-        'Equipment Type', 'Total qty', 'Spare qty', 'Item no.', 'Description', 'Unit Price ($)', 'Models'
+        'Total qty', 'Spare qty', 'Item no.', 'Description', 'Unit Price ($)', 'Models', 'Equipment Types'
     ])
 
 def process_excel(uploaded_file):
