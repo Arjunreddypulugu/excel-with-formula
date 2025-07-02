@@ -144,7 +144,7 @@ def process_excel(uploaded_file):
     return output
 
 # ===== Streamlit Interface =====
-st.title("🔧 Excel Re-organizer")
+st.title("🔧 Spare Parts Packager")
 st.markdown("Connected to SQL Server")
 
 uploaded_file = st.file_uploader("Upload the input Excel file", type=["xlsx"])
